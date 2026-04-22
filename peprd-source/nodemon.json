@@ -1,0 +1,4 @@
+{
+  "watch": ["src"],
+  "ignore": ["wa_sessions", "wa_sessions/**"]
+}

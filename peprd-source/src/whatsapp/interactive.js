@@ -1,28 +1,17 @@
-const { getSocket } = require('./connection');
-const { normalizeJid } = require('./sender');
-
-async function sendList(phone, { title, body, footer, buttonText, sections }) {
-  const sock = getSocket();
-  if (!sock) throw new Error('WhatsApp not connected');
-  const jid = normalizeJid(phone);
-  await sock.sendMessage(jid, {
-    text: `${title ? `*${title}*\n\n` : ''}${body}`,
-    footer,
-    title,
-    buttonText,
+// Build a WhatsApp list message for Baileys
+function buildListMessage(bodyText, buttonLabel, sections) {
+  return {
+    text: bodyText,
+    footer: 'PepRD',
+    title: '',
+    buttonText: buttonLabel,
     sections,
-  });
+  };
 }
 
-async function sendButtons(phone, { body, buttons, footer }) {
-  const sock = getSocket();
-  if (!sock) throw new Error('WhatsApp not connected');
-  const jid = normalizeJid(phone);
-  const templateButtons = buttons.map((b, i) => ({
-    index: i + 1,
-    quickReplyButton: { displayText: b.text, id: b.id },
-  }));
-  await sock.sendMessage(jid, { text: body, footer, templateButtons });
+// Wrap a text response with a list message for interactive menus
+function withList(text, listMessage) {
+  return { text, listMessage };
 }
 
-module.exports = { sendList, sendButtons };
+module.exports = { buildListMessage, withList };

@@ -1,29 +1,46 @@
 {
   "name": "peprd-bot",
   "version": "1.0.0",
-  "description": "AI-powered WhatsApp customer service bot for PepRD (research peptides, Dominican Republic)",
+  "description": "WhatsApp AI bot for PepRD (research peptides, Dominican Republic)",
   "main": "src/server.js",
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "migrate": "node src/db/migrate.js"
+    "client:dev": "cd client && npm run dev",
+    "client:build": "cd client && npm run build",
+    "dev:full": "concurrently \"npm run dev\" \"npm run client:dev\"",
+    "db:init": "node src/db/init.js",
+    "db:seed": "node src/db/seed.js",
+    "db:migrate": "node src/db/migrate-phone.js",
+    "db:migrate-media": "node src/db/migrate-media.js"
   },
+  "keywords": [
+    "peptides",
+    "whatsapp",
+    "bot",
+    "baileys",
+    "peprd"
+  ],
+  "license": "UNLICENSED",
+  "private": true,
   "dependencies": {
-    "@google/generative-ai": "^0.21.0",
-    "@whiskeysockets/baileys": "^6.7.0",
+    "@google/generative-ai": "^0.24.1",
+    "@whiskeysockets/baileys": "^6.7.16",
     "axios": "^1.7.0",
-    "bcryptjs": "^2.4.3",
+    "bcrypt": "^5.1.1",
     "cors": "^2.8.5",
-    "dotenv": "^16.4.0",
-    "express": "^4.19.0",
+    "docxtemplater": "^3.68.3",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
     "jsonwebtoken": "^9.0.2",
-    "multer": "^1.4.5-lts.1",
-    "pg": "^8.12.0",
-    "pino": "^9.3.0",
+    "pg": "^8.13.1",
+    "pino": "^9.6.0",
+    "pizzip": "^3.2.0",
     "puppeteer": "^23.5.0",
     "qrcode-terminal": "^0.12.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.0"
+    "concurrently": "^9.0.0",
+    "nodemon": "^3.1.9"
   }
 }

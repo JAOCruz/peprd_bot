@@ -1,13 +1,14 @@
-# PepRD — AI Bot (WhatsApp)
+# PepRD — AI Bot (WhatsApp + Admin Panel)
 
 ## 🧬 Negocio
 
 **PepRD** — tienda online de péptidos de investigación en República Dominicana (peprd.io).
-- Idioma: Español (RD), nombres de productos en inglés (nomenclatura estándar)
-- Bot: **Peppi** (asistente virtual)
-- Canal: WhatsApp + web chat tester
-- Stack: Node.js + Baileys + PostgreSQL + Gemini + HTML/JS standalone dashboard
-- Disclaimer: productos estrictamente para uso de investigación, no consumo humano
+- Idioma: Español (RD)
+- Bot: **Peppi**
+- Stack: Node.js + Baileys + PostgreSQL + Gemini + React 19/Vite
+- Disclaimer: productos estrictamente para uso de investigación
+
+Originado de un template genérico (antes Gurú Soluciones, un bot legal). Se mantuvo toda la infraestructura (clientes, casos, mensajes, citas, broadcast, documentos, PDF, admin panel, multi-rol) y se rehízo la capa de dominio (prompt, mensajes, knowledge base, catálogo, nav del admin).
 
 ---
 
@@ -15,35 +16,54 @@
 
 ```
 PepRD/
-├── CLAUDE.md                   # este archivo
-├── dashboard.html              # panel standalone (abrir en navegador)
-├── peprd-source/               # Backend (Node.js + Express)
-│   ├── src/
-│   │   ├── server.js
-│   │   ├── config.js
-│   │   ├── db/                 # PG pool + migraciones
-│   │   ├── models/             # Client, Order, Product, Message
-│   │   ├── routes/             # /api/*
-│   │   ├── middleware/
-│   │   ├── whatsapp/           # Baileys + handler
-│   │   ├── conversation/       # flows + stateManager + NLP + llmFallback
-│   │   │   └── flows/
-│   │   │       ├── main_menu.js
-│   │   │       ├── menu.js
-│   │   │       ├── order.js
-│   │   │       ├── peptide_consult.js   # usa LLM con disclaimers médicos
-│   │   │       ├── info.js
-│   │   │       └── handoff.js
-│   │   ├── llm/                # Gemini 2.5/2.0-flash chain + MiniMax
-│   │   ├── documents/          # Factura HTML
-│   │   ├── utils/
-│   │   └── data/
-│   │       ├── businessProps.js
-│   │       └── seed_products.sql  # 74 péptidos, 9 categorías
-│   ├── public/
-│   └── .env.example
-│
-└── peprd-dashboard/            # Dashboard React/Vite (alternativa al HTML standalone)
+├── CLAUDE.md                    # este archivo
+├── README.md                    # visión general
+├── ai-bot-template/             # (la copia original limpia que el user dejó, ahora integrada en peprd-source/)
+└── peprd-source/
+    ├── package.json             # name: peprd-bot · scripts: start/dev/client:dev/dev:full/db:init/db:seed
+    ├── .env.example             # port 8889, GEMINI/MINIMAX keys, DB, WA
+    ├── src/
+    │   ├── server.js
+    │   ├── config.js            # business block + db + jwt + llm + wa
+    │   ├── db/                  # init.js, seed.js, migrate-phone.js, migrate-media.js, pool.js
+    │   ├── models/              # Appointment, Broadcast, Case, Client, ClientDetail, ClientMedia,
+    │   │                        # ConversationSession, DocumentRequest, Invoice, Message, Service, User
+    │   ├── routes/              # auth, admin, clients, cases, cases-api, messages, whatsapp,
+    │   │                        # dashboard, media, invoices, broadcasts, services, documents
+    │   ├── middleware/auth.js   # JWT + requireRole
+    │   ├── whatsapp/            # connection (Baileys), handler, sender, interactive, mediaService, botSettings
+    │   ├── conversation/
+    │   │   ├── nlp.js           # PEPTIDE_TOPICS_PATTERNS + detectPeptideTopic (detectLegalTopic alias)
+    │   │   ├── messages.js      # MSG + LIST (Peppi branding, peptide menu)
+    │   │   ├── router.js        # main menu + flow routing
+    │   │   ├── stateManager.js
+    │   │   └── flows/           # intake, appointment, document, caseStatus, services, docGen, billing
+    │   ├── llm/
+    │   │   ├── systemPrompt.js  # Peppi personality, research-use rules, no medical advice
+    │   │   ├── generate.js      # Gemini wrappers (welcome, register, smart fallback)
+    │   │   ├── mediaAnalysis.js # classify + extract from images/PDFs
+    │   │   ├── quoteGenerator.js
+    │   │   └── client.js        # LLM client + fallback chain
+    │   ├── knowledge/
+    │   │   ├── peptideTopics.js # 10 péptidos clave con contenido educativo
+    │   │   ├── institutions.js  # PubMed, ClinicalTrials, FDA, WHO, PepRD
+    │   │   ├── services.js      # SERVICE_CATEGORIES (9 categorías, ~70 productos)
+    │   │   └── search.js        # searchKnowledge + formatSearchResults
+    │   └── documents/
+    │       ├── generateInvoice.js  # Puppeteer HTML-to-PDF, paleta teal/gold/cream
+    │       ├── generator.js / extractor.js / templateFields.js
+    │       └── makeTemplates.py
+    ├── public/                  # invoices/ uploads/ templates/
+    └── client/                  # React + Vite admin panel
+        ├── vite.config.js       # proxy /api → :8889, dev port 5175
+        ├── tailwind.config.js   # PepRD palette (cream/teal/gold/navy)
+        ├── index.html           # Fraunces + Instrument Sans + JetBrains Mono
+        └── src/
+            ├── main.jsx / App.jsx
+            ├── contexts/ · hooks/ · utils/ · components/Layout.jsx
+            └── pages/           # Login, Dashboard, Clients, Cases, Messages, WhatsApp,
+                                 # Invoices, Broadcast, Appointments, Documents,
+                                 # KnowledgeBase, Analytics, Settings
 ```
 
 ---
@@ -52,103 +72,93 @@ PepRD/
 
 | Flow | Descripción |
 |------|-------------|
-| `main_menu` | Saludo + opciones 1-5 + LLM para charla casual |
-| `menu` | Navegar categorías y ver péptidos con precios |
-| `order` | Carrito → recoger/envío → dirección → fecha → pago → confirmar |
-| `peptide_consult` | Pregunta libre sobre un péptido → LLM responde con info educativa + disclaimer |
-| `info` | Envíos, pagos, contacto, pureza |
-| `handoff` | Pasar a ventas humanas |
+| `main_menu` | Saludo + 8 opciones (pedido, cita, docs, estado, info péptido, catálogo, ventas, factura) |
+| `intake` | Registro de cliente + categoría de péptidos de interés |
+| `appointment` | Agendar recogida en SD o coordinar envío |
+| `document` | Subir comprobante / identificación / receta |
+| `caseStatus` | Consulta estado de pedido por número o teléfono |
+| `services` | Ver catálogo de péptidos por categoría |
+| `docGen` | Generación de documentos (plantillas) |
+| `billing` | Cotizaciones / facturas (LLM-assisted) |
 
-Estado en tabla `sessions` (flow/step/data JSONB). LLM fallback activo en main_menu, menu y order.
+Smart fallback: cualquier texto libre fuera de los steps numéricos lo responde el LLM con contexto de negocio.
 
 ---
 
 ## 🎨 Identidad visual (peprd.io)
 
-- Cream: `#f6f3ec`, cream-2 `#efeadf`
-- Teal: `#2d5f5a` (primary), `#1f4340` (deep)
-- Gold: `#c89b3c` (accent)
+- Cream: `#f6f3ec` / cream-soft `#efeadf`
+- Teal: `#2d5f5a` (primary) → `#1f4340` (deep)
+- Gold: `#c89b3c` (accent) → `#e3bf65`
 - Navy: `#1a2332` (text)
 - Danger: `#b44545`
-- Fuentes: **Fraunces** (serif italic — display), **Instrument Sans** (body), **JetBrains Mono** (métricas/datos)
+- Fuentes: **Fraunces** (serif italic — display), **Instrument Sans** (body), **JetBrains Mono** (métricas y datos)
 
 ---
 
 ## 🚀 Puesta en marcha
 
 ```bash
-# Backend (puerto 8889 por default para no chocar con Tasty Temptations en 8888)
 cd peprd-source
 npm install
-cp .env.example .env           # editar placeholders
+cp .env.example .env                  # fill keys + DB password
 createdb peprd_bot
-npm run migrate
-psql peprd_bot < src/data/seed_products.sql
+npm run db:init
+npm run db:seed
+# (opcional) DISABLE_WA=true en .env para testing sin WA
 
-# Migración adicional si reutilizas DB (para sesiones largas como web-xxx)
-# Las columnas phone ya son VARCHAR(64) en 002_widen_phone.sql
-
-# Opcional: deshabilita WA para testing web
-# En .env: DISABLE_WA=true
-
-npm start
-
-# Dashboard
-open ../dashboard.html         # standalone, no requiere build
-# O dashboard React:
-cd ../peprd-dashboard && npm install && npm run dev
+npm run dev:full                      # backend :8889 + client :5175
+# o separado:
+npm run dev
+npm run client:dev
 ```
 
 ---
 
-## 🔗 Endpoints
+## 🔗 Endpoints principales
 
 ```
 POST   /api/auth/login
-GET    /api/clients
-GET    /api/clients/:phone
-PATCH  /api/clients/:phone
-GET    /api/orders
-GET    /api/orders/:id
-POST   /api/orders
-PATCH  /api/orders/:id/status
-GET    /api/products
-GET    /api/products?category=glp1
-GET    /api/products/categories
+GET    /api/clients            /api/clients/:id
+GET    /api/cases              /api/cases/:id
+POST   /api/cases/detect-and-create
 GET    /api/messages
-GET    /api/whatsapp/status
-POST   /api/whatsapp/send
-POST   /api/chat/message       # web tester
-POST   /api/chat/reset
-GET    /api/chat/state?sessionId=
+GET    /api/whatsapp/...       # QR, state, pause/resume, send
+GET    /api/dashboard/stats    /api/dashboard/knowledge    /api/dashboard/analytics
+GET    /api/media/...
+GET    /api/invoices           POST /api/invoices   /api/invoices/:id/approve  /:id/send
+GET    /api/broadcasts         POST /api/broadcasts/send
+GET    /api/services
+GET    /api/documents
+GET    /api/invoices/pdf/:filename   # PDF download (public)
 ```
 
 ---
 
 ## ⚠️ Reglas de negocio críticas
 
-1. **Uso de investigación solamente** — el bot nunca debe sugerir consumo humano, dosificación personal, o actuar como médico
-2. **Disclaimer automático** en respuestas de consulta y confirmación de pedido
-3. **Pureza y procedencia** — el bot puede decir "≥99% HPLC"; no inventa resultados de lotes
-4. **Precios nunca se inventan** — solo se leen de la tabla `products`
-5. **Consejos médicos prohibidos** — siempre redirigir a un profesional de la salud
+1. **Uso de investigación solamente** — el bot NUNCA debe sugerir consumo humano, dosificación personal, ni actuar como médico
+2. **Disclaimer automático** en respuestas de consulta y en el PDF de factura
+3. **Pureza** — el bot puede decir "≥99% HPLC" (confirmado por la tienda); no inventa resultados de lotes
+4. **Precios NUNCA se inventan** — solo se leen de la tabla `products` / `knowledge/services.js`
+5. **Consejo médico prohibido** — redirigir a profesional de la salud siempre
 
 ---
 
 ## 📝 Checklist antes de producción
 
-- [ ] Confirmar pricing real contra peprd.io (sincronizar seed_products.sql)
+- [ ] Confirmar pricing en `src/knowledge/services.js` contra peprd.io/catalogo/
+- [ ] Sync precios desde tabla `products` con el sitio web principal
 - [ ] Agregar API keys reales (Gemini + MiniMax fallback)
-- [ ] Configurar usuario admin en DB:
+- [ ] Crear usuario admin:
   ```sql
   INSERT INTO users (email, password_hash, name, role)
   VALUES ('admin@peprd.io', '<bcrypt-hash>', 'Admin', 'admin');
   ```
-- [ ] Revisar todos los disclaimers legales (legal DR + disclaimers médicos)
+- [ ] Revisar disclaimers legales (legal DR + médicos)
 - [ ] Conectar pasarela de pago (transferencia manual, USDT, efectivo)
-- [ ] Configurar plantilla de factura en `public/templates/invoice.html`
-- [ ] Verificar que el `.env` de producción no se sube al repo
-- [ ] Montar el backend en VPS con PM2 para persistencia WhatsApp
+- [ ] Verificar que `.env` no se sube al repo
+- [ ] Montar backend en VPS con PM2 para persistencia de sesión WhatsApp
 
 ---
 

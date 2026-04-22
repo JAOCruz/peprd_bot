@@ -1,48 +1,60 @@
-const { query } = require('../db/pool');
+const ConversationSession = require('../models/ConversationSession');
+const Client = require('../models/Client');
+const { detectIntent } = require('./nlp');
+const { MSG } = require('./messages');
 
-async function get(phone) {
-  const { rows } = await query('SELECT * FROM sessions WHERE phone=$1', [phone]);
-  if (rows[0]) return rows[0];
-  const inserted = await query(
-    'INSERT INTO sessions (phone, flow, step, data) VALUES ($1,NULL,NULL,$2) RETURNING *',
-    [phone, {}]
-  );
-  return inserted.rows[0];
+// Global commands that override any flow
+const GLOBAL_INTENTS = new Set(['menu', 'help', 'goodbye']);
+
+async function getOrCreateSession(phone) {
+  let session = await ConversationSession.findActive(phone);
+  if (session) return session;
+
+  const client = await Client.findByPhone(phone);
+  session = await ConversationSession.create(phone, client?.id || null);
+  return session;
 }
 
-async function setFlow(phone, flow, step = 'start', data = {}) {
-  const { rows } = await query(
-    `INSERT INTO sessions (phone, flow, step, data, updated_at)
-     VALUES ($1,$2,$3,$4,NOW())
-     ON CONFLICT (phone) DO UPDATE SET flow=$2, step=$3, data=$4, updated_at=NOW()
-     RETURNING *`,
-    [phone, flow, step, data]
-  );
-  return rows[0];
+async function transitionTo(session, flow, step, extraData = {}) {
+  const data = { ...session.data, ...extraData };
+  return ConversationSession.update(session.id, { flow, step, data });
 }
 
-async function setStep(phone, step, dataPatch = {}) {
-  const session = await get(phone);
-  const data = { ...(session.data || {}), ...dataPatch };
-  const { rows } = await query(
-    'UPDATE sessions SET step=$2, data=$3, updated_at=NOW() WHERE phone=$1 RETURNING *',
-    [phone, step, data]
-  );
-  return rows[0];
+async function updateData(session, newData) {
+  const data = { ...session.data, ...newData };
+  return ConversationSession.update(session.id, { flow: session.flow, step: session.step, data });
 }
 
-async function patchData(phone, dataPatch) {
-  const session = await get(phone);
-  const data = { ...(session.data || {}), ...dataPatch };
-  const { rows } = await query(
-    'UPDATE sessions SET data=$2, updated_at=NOW() WHERE phone=$1 RETURNING *',
-    [phone, data]
-  );
-  return rows[0];
+function checkGlobalCommand(text) {
+  const intent = detectIntent(text);
+  if (GLOBAL_INTENTS.has(intent)) return intent;
+  return null;
 }
 
-async function reset(phone) {
-  await query('UPDATE sessions SET flow=NULL, step=NULL, data=$2, updated_at=NOW() WHERE phone=$1', [phone, {}]);
+async function handleGlobalCommand(intent, session) {
+  switch (intent) {
+    case 'menu':
+      await transitionTo(session, 'main_menu', 'show');
+      return MSG.MAIN_MENU;
+    case 'help':
+      return MSG.HELP;
+    case 'goodbye':
+      await ConversationSession.close(session.id);
+      return MSG.GOODBYE;
+    default:
+      return null;
+  }
 }
 
-module.exports = { get, setFlow, setStep, patchData, reset };
+async function resetToMenu(session) {
+  return transitionTo(session, 'main_menu', 'show');
+}
+
+module.exports = {
+  getOrCreateSession,
+  transitionTo,
+  updateData,
+  checkGlobalCommand,
+  handleGlobalCommand,
+  resetToMenu,
+};
