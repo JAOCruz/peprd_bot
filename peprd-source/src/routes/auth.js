@@ -1,10 +1,30 @@
 const express = require('express');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const User = require('../models/User');
 const { generateToken, authenticate } = require('../middleware/auth');
 
 const router = express.Router();
 
-router.post('/register', async (req, res) => {
+// Brute-force protection: 5 attempts per 15min per IP+email combo
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req, res) => `${ipKeyGenerator(req, res)}:${(req.body && req.body.email) || ''}`,
+  message: { error: 'Too many login attempts. Try again in 15 minutes.' },
+  skipSuccessfulRequests: true,
+});
+
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many registration attempts.' },
+});
+
+router.post('/register', registerLimiter, async (req, res) => {
   try {
     const { email, password, name } = req.body;
     if (!email || !password || !name) {
@@ -25,7 +45,7 @@ router.post('/register', async (req, res) => {
   }
 });
 
-router.post('/login', async (req, res) => {
+router.post('/login', loginLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     if (!email || !password) {

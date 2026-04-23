@@ -1,11 +1,21 @@
 const express = require('express');
+const { rateLimit, ipKeyGenerator } = require('express-rate-limit');
 const Case = require('../models/Case');
 const Client = require('../models/Client');
 const pool = require('../db/pool');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, requireRole } = require('../middleware/auth');
 const config = require('../config');
 
 const router = express.Router();
+
+const complaintLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req, res) => ipKeyGenerator(req, res),
+  message: { error: 'Rate limit exceeded on complaint detection' },
+});
 
 // Rule-based complaint detection (no AI, no quota issues)
 function detectComplaint(text) {
@@ -69,83 +79,97 @@ function detectComplaint(text) {
   };
 }
 
-// Internal endpoint for complaint detection (no auth required)
-router.post('/detect-and-create', async (req, res) => {
+// Core: detect + create case. Safe to call from internal code without HTTP.
+async function detectAndCreateComplaint({ messageText, phone, clientId, messageTimestamp }) {
+  if (!messageText || !phone) {
+    throw new Error('messageText and phone are required');
+  }
+
+  const analysis = detectComplaint(messageText);
+  if (!analysis.is_complaint || !analysis.case_type) {
+    return { is_complaint: false, case_type: null };
+  }
+
+  let client = null;
+  if (clientId) {
+    client = await Client.findById(clientId);
+  } else {
+    client = await Client.findByPhone(phone);
+  }
+  if (!client) {
+    const err = new Error('Client not found');
+    err.status = 404;
+    throw err;
+  }
+
+  const caseNumber = `REC-${Date.now()}`;
+
+  // Transaction: case + tags are atomic
+  const txClient = await pool.connect();
   try {
-    const { message_text, phone, client_id, message_timestamp } = req.body;
-    if (!message_text || !phone) {
-      return res.status(400).json({ error: 'message_text and phone are required' });
-    }
+    await txClient.query('BEGIN');
+    const { rows } = await txClient.query(
+      `INSERT INTO cases (case_number, title, description, case_type, client_id, user_id)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [caseNumber, 'Reclamación reportada vía WhatsApp', messageText, analysis.case_type, client.id, null]
+    );
+    const caseRecord = rows[0];
 
-    // Rule-based detection (no AI)
-    const analysis = detectComplaint(message_text);
-
-    if (!analysis.is_complaint || !analysis.case_type) {
-      return res.json({ is_complaint: false, case_type: null });
-    }
-
-    // Get or find client
-    let client = null;
-    if (client_id) {
-      client = await Client.findById(client_id);
-    } else {
-      client = await Client.findByPhone(phone);
-    }
-    if (!client) {
-      return res.status(404).json({ error: 'Client not found' });
-    }
-
-    // Generate unique case number
-    const timestamp = Date.now();
-    const caseNumber = `REC-${timestamp}`;
-
-    // Create case
-    const caseRecord = await Case.create({
-      caseNumber,
-      title: `Reclamación reportada vía WhatsApp`,
-      description: message_text,
-      caseType: analysis.case_type,
-      clientId: client.id,
-      userId: null,
-    });
-
-    // Add complaint tag
     if (analysis.complaint_tag) {
-      await pool.query(
+      await txClient.query(
         'INSERT INTO case_tags (case_id, tag_type, tag_value) VALUES ($1, $2, $3)',
         [caseRecord.id, 'complaint_type', analysis.complaint_tag]
       );
     }
-
-    // Add message reference (source of complaint)
-    if (message_timestamp) {
-      await pool.query(
+    if (messageTimestamp) {
+      await txClient.query(
         'INSERT INTO case_tags (case_id, tag_type, tag_value) VALUES ($1, $2, $3)',
-        [caseRecord.id, 'source_message_timestamp', message_timestamp]
+        [caseRecord.id, 'source_message_timestamp', String(messageTimestamp)]
       );
-      await pool.query(
+      await txClient.query(
         'INSERT INTO case_tags (case_id, tag_type, tag_value) VALUES ($1, $2, $3)',
         [caseRecord.id, 'source_phone', phone]
       );
     }
+    await txClient.query('COMMIT');
 
     console.log(`[Cases] Auto-created complaint case #${caseRecord.id} for ${phone}: ${analysis.case_type} (${analysis.complaint_tag})`);
 
-    res.json({
+    return {
       is_complaint: true,
       case_type: analysis.case_type,
       case_id: caseRecord.id,
       case_number: caseRecord.case_number,
       complaint_tag: analysis.complaint_tag,
       confidence: analysis.confidence,
+    };
+  } catch (e) {
+    await txClient.query('ROLLBACK');
+    throw e;
+  } finally {
+    txClient.release();
+  }
+}
+
+router.use(authenticate);
+
+// Admin/debug surface for complaint detection. Internal WA handler calls the
+// function directly (no HTTP), so this route is not on the hot path.
+router.post('/detect-and-create', complaintLimiter, async (req, res) => {
+  try {
+    const result = await detectAndCreateComplaint({
+      messageText: req.body.message_text,
+      phone: req.body.phone,
+      clientId: req.body.client_id,
+      messageTimestamp: req.body.message_timestamp,
     });
+    res.json(result);
   } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
     console.error('Complaint detection error:', err);
     res.status(500).json({ error: 'Complaint detection failed' });
   }
 });
-
-router.use(authenticate);
 
 router.get('/', async (req, res) => {
   try {
@@ -216,7 +240,7 @@ router.put('/:id', async (req, res) => {
 });
 
 // Mark case as resolved (admin only)
-router.post('/:id/resolve', async (req, res) => {
+router.post('/:id/resolve', requireRole('admin'), async (req, res) => {
   try {
     const caseRecord = await Case.update(req.params.id, { status: 'resolved' });
     if (!caseRecord) return res.status(404).json({ error: 'Case not found' });
@@ -229,7 +253,7 @@ router.post('/:id/resolve', async (req, res) => {
 });
 
 // Reopen a resolved case
-router.post('/:id/reopen', async (req, res) => {
+router.post('/:id/reopen', requireRole('admin'), async (req, res) => {
   try {
     const caseRecord = await Case.update(req.params.id, { status: 'open' });
     if (!caseRecord) return res.status(404).json({ error: 'Case not found' });
@@ -242,7 +266,7 @@ router.post('/:id/reopen', async (req, res) => {
 });
 
 // Assign case to a user (employee/lawyer)
-router.post('/:id/assign', async (req, res) => {
+router.post('/:id/assign', requireRole('admin'), async (req, res) => {
   try {
     const { user_id } = req.body;
     if (!user_id) {
@@ -258,7 +282,7 @@ router.post('/:id/assign', async (req, res) => {
   }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireRole('admin'), async (req, res) => {
   try {
     const deleted = await Case.delete(req.params.id);
     if (!deleted) return res.status(404).json({ error: 'Case not found' });
@@ -270,3 +294,4 @@ router.delete('/:id', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.detectAndCreateComplaint = detectAndCreateComplaint;

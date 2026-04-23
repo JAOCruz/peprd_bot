@@ -1,9 +1,26 @@
 const express = require('express');
 const Client = require('../models/Client');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(authenticate);
+
+// Load client into req.client and block digitadors that aren't assigned.
+// Returns 404 if not found, 403 if unauthorized.
+async function loadClientWithOwnership(req, res, next) {
+  try {
+    const client = await Client.findById(req.params.id);
+    if (!client) return res.status(404).json({ error: 'Client not found' });
+    if (req.user.role === 'digitador' && client.assigned_to !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    req.client = client;
+    next();
+  } catch (err) {
+    console.error('Client ownership check error:', err);
+    res.status(500).json({ error: 'Internal error' });
+  }
+}
 
 router.get('/', async (req, res) => {
   try {
@@ -35,10 +52,9 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-router.get('/:id/summary', async (req, res) => {
+router.get('/:id/summary', loadClientWithOwnership, async (req, res) => {
   try {
-    const client = await Client.findById(req.params.id);
-    if (!client) return res.status(404).json({ error: 'Client not found' });
+    const client = req.client;
 
     const pool = require('../db/pool');
     const [cases, docs, msgs, appointments] = await Promise.all([
@@ -78,7 +94,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', loadClientWithOwnership, async (req, res) => {
   try {
     const { name, phone, email, address, notes } = req.body;
     const fields = {};
@@ -113,7 +129,7 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', requireRole('admin'), async (req, res) => {
   try {
     const deleted = await Client.delete(req.params.id);
     if (!deleted) return res.status(404).json({ error: 'Client not found' });
@@ -127,7 +143,7 @@ router.delete('/:id', async (req, res) => {
 module.exports = router;
 
 // Get detailed client information
-router.get('/:id/detail', async (req, res) => {
+router.get('/:id/detail', loadClientWithOwnership, async (req, res) => {
   try {
     const ClientDetail = require('../models/ClientDetail');
     const detail = await ClientDetail.getFullClientData(req.params.id);
@@ -142,7 +158,7 @@ router.get('/:id/detail', async (req, res) => {
 });
 
 // Get cases by type for a client
-router.get('/:id/cases-summary', async (req, res) => {
+router.get('/:id/cases-summary', loadClientWithOwnership, async (req, res) => {
   try {
     const ClientDetail = require('../models/ClientDetail');
     const summary = await ClientDetail.getCasesByType(req.params.id);
@@ -154,8 +170,9 @@ router.get('/:id/cases-summary', async (req, res) => {
 });
 
 // Get media for a client
-router.get('/:id/media', async (req, res) => {
+router.get('/:id/media', loadClientWithOwnership, async (req, res) => {
   try {
+    const pool = require('../db/pool');
     const { rows } = await pool.query(
       'SELECT * FROM client_media WHERE client_id = $1 ORDER BY created_at DESC',
       [req.params.id]

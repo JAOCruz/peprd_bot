@@ -7,7 +7,7 @@ const router = express.Router();
 router.use(authenticate);
 
 // Hot-reload system prompt without restarting the bot
-router.post('/reload-prompt', (req, res) => {
+router.post('/reload-prompt', requireRole('admin'), (req, res) => {
   try {
     resetCache();
     // Trigger rebuild by calling getSystemPrompt once
@@ -18,7 +18,8 @@ router.post('/reload-prompt', (req, res) => {
       promptLength: prompt.length
     });
   } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
+    console.error('[admin] reload-prompt error:', err);
+    res.status(500).json({ ok: false, error: 'Internal error' });
   }
 });
 

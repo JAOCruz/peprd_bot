@@ -1,5 +1,10 @@
 const pool = require('../db/pool');
 
+const ALLOWED_UPDATE_FIELDS = new Set([
+  'wa_message_id', 'phone', 'client_id', 'case_id',
+  'direction', 'content', 'media_url', 'status', 'wa_jid',
+]);
+
 const Message = {
   async create({ waMessageId, phone, clientId, caseId, direction, content, mediaUrl, status = 'sent', waJid = null }) {
     const { rows } = await pool.query(
@@ -71,8 +76,9 @@ const Message = {
   },
 
   async update(id, fields) {
-    const keys = Object.keys(fields);
-    const values = Object.values(fields);
+    const keys = Object.keys(fields).filter(k => ALLOWED_UPDATE_FIELDS.has(k));
+    if (keys.length === 0) return this.findById(id);
+    const values = keys.map(k => fields[k]);
     const sets = keys.map((k, i) => `${k} = $${i + 1}`).join(', ');
     const { rows } = await pool.query(
       `UPDATE messages SET ${sets} WHERE id = $${keys.length + 1} RETURNING *`,

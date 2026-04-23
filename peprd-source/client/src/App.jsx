@@ -22,6 +22,14 @@ function ProtectedRoute({ children }) {
   return children
 }
 
+function AdminOnly({ children }) {
+  const { user, loading } = useAuth()
+  if (loading) return <div className="empty">Cargando...</div>
+  if (!user) return <Navigate to="/login" replace />
+  if (user.role !== 'admin') return <Navigate to="/" replace />
+  return children
+}
+
 export default function App() {
   return (
     <Routes>
@@ -34,12 +42,12 @@ export default function App() {
         <Route path="messages/:clientId" element={<Messages />} />
         <Route path="appointments" element={<Appointments />} />
         <Route path="documents" element={<Documents />} />
-        <Route path="knowledge" element={<KnowledgeBase />} />
-        <Route path="whatsapp" element={<WhatsApp />} />
+        <Route path="knowledge" element={<AdminOnly><KnowledgeBase /></AdminOnly>} />
+        <Route path="whatsapp" element={<AdminOnly><WhatsApp /></AdminOnly>} />
         <Route path="invoices" element={<Invoices />} />
-        <Route path="broadcast" element={<Broadcast />} />
-        <Route path="analytics" element={<Analytics />} />
-        <Route path="settings" element={<Settings />} />
+        <Route path="broadcast" element={<AdminOnly><Broadcast /></AdminOnly>} />
+        <Route path="analytics" element={<AdminOnly><Analytics /></AdminOnly>} />
+        <Route path="settings" element={<AdminOnly><Settings /></AdminOnly>} />
       </Route>
     </Routes>
   )

@@ -1,5 +1,7 @@
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const compression = require('compression');
 const path = require('path');
 const config = require('./config');
 const { reconnectSavedSessions } = require('./whatsapp/connection');
@@ -21,8 +23,17 @@ const documentRoutes = require('./routes/documents');
 
 const app = express();
 
+app.set('trust proxy', 1);
+app.use(helmet({
+  // The admin SPA is served from the same origin; keep CSP off for now so Vite's
+  // inline-module bootstrap + Google Fonts don't break. Revisit when we harden the client.
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+}));
+app.use(compression());
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
@@ -54,9 +65,22 @@ setInterval(async () => {
   }
 }, 60000);
 
-// Error handler (API only, frontend on separate port 5174)
+// Serve built admin panel (client/dist) in production
+const clientDist = path.join(__dirname, '..', 'client', 'dist');
+app.use(express.static(clientDist));
+app.get(/^\/(?!api\/|health$).*/, (req, res, next) => {
+  res.sendFile(path.join(clientDist, 'index.html'), (err) => {
+    if (err) next();
+  });
+});
+
+// Error handler: log full detail server-side, return generic message to client.
 app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err);
+  if (config.nodeEnv === 'production') {
+    console.error('Unhandled error:', err.message);
+  } else {
+    console.error('Unhandled error:', err);
+  }
   res.status(500).json({ error: 'Internal server error' });
 });
 

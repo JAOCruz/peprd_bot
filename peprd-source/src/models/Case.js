@@ -1,5 +1,10 @@
 const pool = require('../db/pool');
 
+const ALLOWED_UPDATE_FIELDS = new Set([
+  'case_number', 'title', 'description', 'status', 'case_type',
+  'client_id', 'user_id', 'court', 'next_hearing',
+]);
+
 const Case = {
   async create({ caseNumber, title, description, caseType, clientId, userId, court, nextHearing }) {
     const { rows } = await pool.query(
@@ -49,8 +54,9 @@ const Case = {
   },
 
   async update(id, fields) {
-    const keys = Object.keys(fields);
-    const values = Object.values(fields);
+    const keys = Object.keys(fields).filter(k => ALLOWED_UPDATE_FIELDS.has(k));
+    if (keys.length === 0) return this.findById(id);
+    const values = keys.map(k => fields[k]);
     const sets = keys.map((k, i) => `${k} = $${i + 1}`).join(', ');
     const { rows } = await pool.query(
       `UPDATE cases SET ${sets}, updated_at = NOW() WHERE id = $${keys.length + 1} RETURNING *`,

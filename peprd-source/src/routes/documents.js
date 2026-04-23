@@ -1,12 +1,23 @@
 const express = require('express');
 const fs = require('fs');
 const path = require('path');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, requireRole } = require('../middleware/auth');
+const config = require('../config');
 
 const router = express.Router();
 
-// Path to the generated document index JSON
-const DOCUMENT_INDEX_PATH = '/home/jay/Projects/guru-whatsapp-bot/DB/document_index.json';
+// Documents feature is the legacy legal-template. Disabled when env is unset.
+const DOCUMENT_INDEX_PATH = config.documents.indexPath;
+const BASE_PATH = config.documents.baseDir;
+const DOCUMENTS_ENABLED = !!(DOCUMENT_INDEX_PATH && BASE_PATH);
+
+router.use(authenticate);
+router.use((req, res, next) => {
+  if (!DOCUMENTS_ENABLED) {
+    return res.status(404).json({ error: 'Documents feature is not configured' });
+  }
+  next();
+});
 
 // GET /api/documents/index — fetch complete document index (public - metadata only)
 router.get('/index', async (req, res) => {
@@ -28,7 +39,7 @@ router.get('/index', async (req, res) => {
 });
 
 // POST /api/documents/:id/comment — add comment to document metadata
-router.post('/:id/comment', authenticate, async (req, res) => {
+router.post('/:id/comment', async (req, res) => {
   try {
     const { text, author } = req.body;
     if (!text) {
@@ -76,7 +87,7 @@ router.post('/:id/comment', authenticate, async (req, res) => {
 });
 
 // PUT /api/documents/:id — update document metadata (description, tags, status)
-router.put('/:id', authenticate, async (req, res) => {
+router.put('/:id', requireRole('admin'), async (req, res) => {
   try {
     const { description, tags, status } = req.body;
 
@@ -159,12 +170,15 @@ router.get('/file/:docId', async (req, res) => {
       return res.status(404).json({ error: 'Document not found' });
     }
 
-    const filePath = document.absolute_path;
-
-    // Security: validate the path stays within the known base directory
-    const BASE_PATH = '/home/jay/Projects/guru-whatsapp-bot/DB';
-    const resolvedPath = path.resolve(filePath);
-    if (!resolvedPath.startsWith(path.resolve(BASE_PATH))) {
+    // Rebuild the path from BASE_PATH + relative path stored in the index.
+    // Do NOT trust document.absolute_path — if the index JSON is ever tampered
+    // with (e.g., via the comment/edit endpoints) an attacker could escape via
+    // a matching-prefix absolute path. relative_path is safer because we resolve
+    // it against BASE_PATH and re-check containment.
+    const rel = document.relative_path || document.file_path || '';
+    const base = path.resolve(BASE_PATH);
+    const resolvedPath = path.resolve(base, rel);
+    if (!resolvedPath.startsWith(base + path.sep)) {
       return res.status(403).json({ error: 'Access denied' });
     }
 

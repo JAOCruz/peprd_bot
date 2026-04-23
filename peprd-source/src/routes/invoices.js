@@ -6,6 +6,68 @@ const { generateInvoicePDF, generateInvoiceFromTemplate, generateDocNumber } = r
 
 const router = express.Router();
 
+// Strict validation of invoice items. Rejects malformed input before it hits
+// the DB or PDF render — prevents stored XSS, bad totals, and type confusion.
+const MAX_ITEMS = 100;
+const MAX_PRICE = 10_000_000;
+const MAX_QTY = 10_000;
+const MAX_DESC = 500;
+const MAX_NOTES = 2000;
+const MAX_NAME = 200;
+const ALLOWED_TYPES = new Set(['COTIZACIÓN', 'FACTURA']);
+
+function validateItems(items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    return { error: 'items must be a non-empty array' };
+  }
+  if (items.length > MAX_ITEMS) {
+    return { error: `too many items (max ${MAX_ITEMS})` };
+  }
+  const clean = [];
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    if (!it || typeof it !== 'object') return { error: `item[${i}] must be an object` };
+    const cantidad = Number(it.cantidad);
+    const precio = Number(it.precio);
+    if (!Number.isFinite(cantidad) || cantidad <= 0 || cantidad > MAX_QTY || !Number.isInteger(cantidad)) {
+      return { error: `item[${i}].cantidad must be a positive integer ≤ ${MAX_QTY}` };
+    }
+    if (!Number.isFinite(precio) || precio < 0 || precio > MAX_PRICE) {
+      return { error: `item[${i}].precio must be a number between 0 and ${MAX_PRICE}` };
+    }
+    const desc = it.desc == null ? '' : String(it.desc).slice(0, MAX_DESC);
+    clean.push({ desc, cantidad, precio, itbis: !!it.itbis });
+  }
+  return { items: clean };
+}
+
+function validateInvoiceBody(body, { requireItems = true } = {}) {
+  const { type, clientId, clientName, clientPhone, items, notes } = body || {};
+  if (type != null && !ALLOWED_TYPES.has(type)) {
+    return { error: `type must be one of ${[...ALLOWED_TYPES].join(', ')}` };
+  }
+  if (requireItems || items !== undefined) {
+    const r = validateItems(items);
+    if (r.error) return r;
+    body.items = r.items;
+  }
+  if (clientName != null) {
+    if (typeof clientName !== 'string' || clientName.length === 0 || clientName.length > MAX_NAME) {
+      return { error: `clientName must be 1-${MAX_NAME} chars` };
+    }
+  }
+  if (clientPhone != null && (typeof clientPhone !== 'string' || clientPhone.length > 40)) {
+    return { error: 'clientPhone invalid' };
+  }
+  if (notes != null && (typeof notes !== 'string' || notes.length > MAX_NOTES)) {
+    return { error: `notes must be ≤ ${MAX_NOTES} chars` };
+  }
+  if (clientId != null && !Number.isInteger(Number(clientId))) {
+    return { error: 'clientId must be integer' };
+  }
+  return { ok: true };
+}
+
 // ── PUBLIC: get all quotations (no auth) ──
 router.get('/quotations', async (req, res) => {
   try {
@@ -81,10 +143,10 @@ router.get('/:id', async (req, res) => {
 // ── POST /api/invoices ── create (any authenticated user)
 router.post('/', async (req, res) => {
   try {
+    const v = validateInvoiceBody(req.body, { requireItems: true });
+    if (v.error) return res.status(400).json({ error: v.error });
+    if (!req.body.clientName) return res.status(400).json({ error: 'clientName is required' });
     const { type, clientId, clientName, clientPhone, items, notes } = req.body;
-    if (!clientName || !items || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ error: 'clientName and items[] are required' });
-    }
 
     // Calculate totals
     const subtotal = items.reduce((s, i) => s + (Number(i.cantidad) * Number(i.precio)), 0);
@@ -121,6 +183,8 @@ router.put('/:id', async (req, res) => {
       if (invoice.status !== 'draft') return res.status(400).json({ error: 'Cannot edit a non-draft invoice' });
     }
 
+    const v = validateInvoiceBody(req.body, { requireItems: false });
+    if (v.error) return res.status(400).json({ error: v.error });
     const { type, clientName, clientPhone, items, notes } = req.body;
     const fields = {};
     if (type)        fields.type        = type;

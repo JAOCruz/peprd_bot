@@ -1,7 +1,7 @@
 const pool = require('../db/pool');
 const bcrypt = require('bcrypt');
 
-const SALT_ROUNDS = 10;
+const SALT_ROUNDS = 12;
 
 const User = {
   async create({ email, password, name, role = 'lawyer' }) {

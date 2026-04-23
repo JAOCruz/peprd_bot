@@ -1,5 +1,11 @@
 const pool = require('../db/pool');
 
+const ALLOWED_UPDATE_FIELDS = new Set([
+  'doc_number', 'type', 'status', 'client_id', 'client_name', 'client_phone',
+  'items', 'notes', 'subtotal', 'itbis', 'total',
+  'approved_by', 'approved_at', 'pdf_path', 'sent_at',
+]);
+
 const Invoice = {
   async create({ docNumber, type = 'COTIZACIÓN', clientId, clientName, clientPhone, items, notes, subtotal, itbis, total, createdBy }) {
     const { rows } = await pool.query(
@@ -76,8 +82,9 @@ const Invoice = {
   },
 
   async update(id, fields) {
-    const keys = Object.keys(fields);
-    const values = Object.values(fields);
+    const keys = Object.keys(fields).filter(k => ALLOWED_UPDATE_FIELDS.has(k));
+    if (keys.length === 0) return this.findById(id);
+    const values = keys.map(k => fields[k]);
     const sets = keys.map((k, i) => `${k} = $${i + 1}`).join(', ');
     const { rows } = await pool.query(
       `UPDATE invoices SET ${sets}, updated_at=NOW() WHERE id=$${keys.length + 1} RETURNING *`,

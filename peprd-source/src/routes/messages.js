@@ -2,7 +2,7 @@ const express = require('express');
 const Message = require('../models/Message');
 const { sendMessage, getAnyConnection } = require('../whatsapp/connection');
 const Client = require('../models/Client');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, requireRole } = require('../middleware/auth');
 const {
   setChatEnabled, isChatEnabled, getEnabledPhones,
   setManualMode, isManualMode, getManualPhones,
@@ -11,15 +11,15 @@ const {
 
 const router = express.Router();
 
-// Internal endpoint to toggle manual mode (no auth required)
-router.post('/internal/manual-toggle/:phone', (req, res) => {
+router.use(authenticate);
+
+// Toggle manual mode (was previously unauth — moved behind auth)
+router.post('/internal/manual-toggle/:phone', requireRole('admin'), (req, res) => {
   const phone = req.params.phone;
   const current = isManualMode(phone);
   setManualMode(phone, !current);
   res.json({ phone, manualMode: !current, botResponding: shouldBotRespond(phone) });
 });
-
-router.use(authenticate);
 
 // Get all conversations grouped by phone number
 router.get('/conversations', async (req, res) => {
@@ -148,7 +148,7 @@ router.post('/send-direct', async (req, res) => {
 });
 
 // Toggle chat enabled (for "selected" mode — activate/deactivate bot for a chat)
-router.post('/chat-toggle/:phone', (req, res) => {
+router.post('/chat-toggle/:phone', requireRole('admin'), (req, res) => {
   const { phone } = req.params;
   const current = isChatEnabled(phone);
   setChatEnabled(phone, !current);
@@ -156,7 +156,7 @@ router.post('/chat-toggle/:phone', (req, res) => {
 });
 
 // Toggle manual mode (agent takeover — independent of chat enabled)
-router.post('/manual-toggle/:phone', (req, res) => {
+router.post('/manual-toggle/:phone', requireRole('admin'), (req, res) => {
   const { phone } = req.params;
   const current = isManualMode(phone);
   setManualMode(phone, !current);

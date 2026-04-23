@@ -1,5 +1,13 @@
 require('dotenv').config();
 
+function requireEnv(name) {
+  const v = process.env[name];
+  if (!v || v === 'change-me-in-production' || v === '__FILL_JWT_SECRET__' || v === '__FILL_DB_PASSWORD__') {
+    throw new Error(`${name} must be set to a strong value in .env`);
+  }
+  return v;
+}
+
 module.exports = {
   // Server config
   port: process.env.PORT || 8889,
@@ -28,25 +36,37 @@ module.exports = {
     port: parseInt(process.env.DB_PORT) || 5432,
     database: process.env.DB_NAME || 'peprd_bot',
     user: process.env.DB_USER || 'postgres',
-    password: process.env.DB_PASSWORD || '',
+    password: requireEnv('DB_PASSWORD'),
   },
 
   // JWT config
   jwt: {
-    secret: process.env.JWT_SECRET || 'change-me-in-production',
+    secret: requireEnv('JWT_SECRET'),
     expiresIn: process.env.JWT_EXPIRES_IN || '7d',
+    algorithm: 'HS256',
   },
 
   // WhatsApp config
   wa: {
     sessionDir: process.env.WA_SESSION_DIR || './wa_sessions',
     disabled: process.env.DISABLE_WA === 'true',
+    // Capture-only mode: receive + log messages, never send replies.
+    // Useful while testing the AI without blasting users. Overrides every
+    // other "bot active" setting — replies are suppressed even if the UI
+    // toggle says active.
+    captureOnly: process.env.CAPTURE_ONLY === 'true',
   },
 
   // Uploads config
   uploads: {
     dir: process.env.UPLOADS_DIR || './uploads',
     maxSizeMB: parseInt(process.env.MAX_UPLOAD_SIZE_MB) || 25,
+  },
+
+  // Legal docs template index (optional, legacy template feature)
+  documents: {
+    baseDir: process.env.DOCUMENTS_BASE_DIR || '',
+    indexPath: process.env.DOCUMENT_INDEX_PATH || '',
   },
 
   // Gemini AI config

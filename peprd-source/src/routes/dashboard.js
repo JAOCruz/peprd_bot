@@ -1,6 +1,6 @@
 const express = require('express');
 const pool = require('../db/pool');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, requireRole } = require('../middleware/auth');
 const Appointment = require('../models/Appointment');
 const DocumentRequest = require('../models/DocumentRequest');
 const { PEPTIDE_TOPICS } = require('../knowledge/peptideTopics');
@@ -124,7 +124,7 @@ router.get('/knowledge', (req, res) => {
   res.json({ topics, institutions, serviceCategories });
 });
 
-router.put('/knowledge/topics/:key', (req, res) => {
+router.put('/knowledge/topics/:key', requireRole('admin'), (req, res) => {
   const topic = PEPTIDE_TOPICS[req.params.key];
   if (!topic) return res.status(404).json({ error: 'Topic not found' });
   const { title, content, refs, keywords } = req.body;

@@ -13,7 +13,7 @@ function authenticate(req, res, next) {
 
   const token = header.slice(7);
   try {
-    const payload = jwt.verify(token, config.jwt.secret);
+    const payload = jwt.verify(token, config.jwt.secret, { algorithms: [config.jwt.algorithm] });
     req.user = { id: payload.id, email: payload.email, role: payload.role };
 
     // Update last_seen (throttled — max 1 write per 60s per user)
@@ -35,7 +35,7 @@ function generateToken(user) {
   return jwt.sign(
     { id: user.id, email: user.email, role: user.role },
     config.jwt.secret,
-    { expiresIn: config.jwt.expiresIn }
+    { expiresIn: config.jwt.expiresIn, algorithm: config.jwt.algorithm }
   );
 }
 

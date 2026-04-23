@@ -24,6 +24,9 @@ export default function Login() {
     } catch (err) {
       setError(err.message || 'Error al iniciar sesión')
     } finally {
+      // Clear password from React state regardless of outcome — keeps it out of
+      // component memory / devtools in case of tab snapshotting.
+      setPassword('')
       setLoading(false)
     }
   }
@@ -90,6 +93,7 @@ export default function Login() {
                   className="w-full rounded-lg border border-slate-600 bg-slate-800 py-3 pl-10 pr-4 text-white outline-none transition-all focus:border-purple-500 focus:ring-2 focus:ring-purple-500/50"
                   required
                   autoFocus
+                  autoComplete="username"
                   placeholder="tu@email.com"
                 />
               </div>
@@ -111,6 +115,7 @@ export default function Login() {
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full rounded-lg border border-slate-600 bg-slate-800 py-3 pl-10 pr-4 text-white outline-none transition-all focus:border-purple-500 focus:ring-2 focus:ring-purple-500/50"
                   required
+                  autoComplete="current-password"
                   placeholder="••••••••"
                 />
               </div>

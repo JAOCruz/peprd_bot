@@ -39,6 +39,9 @@ const enabledPhones = new Set(saved.enabledPhones);
 const manualPhones = new Set(saved.manualPhones);
 
 console.log(`[WA] Bot state restored: active=${botActive}, mode=${botMode}, assignment=${assignmentMode}, enabled=${enabledPhones.size}, manual=${manualPhones.size}`);
+if (config.wa.captureOnly) {
+  console.log('[WA] CAPTURE_ONLY=true — messages will be logged, NO replies will be sent');
+}
 
 // Strip @s.whatsapp.net or @lid suffixes from phone numbers
 function normalizePhone(phone) {
@@ -133,6 +136,7 @@ function getManualPhones() {
 
 // Determine if bot should respond to a specific phone
 function shouldBotRespond(phone) {
+  if (config.wa.captureOnly) return false;
   if (!botActive) return false;
   if (botMode === 'selected' && !enabledPhones.has(phone)) return false;
   if (manualPhones.has(phone)) return false;
@@ -221,22 +225,15 @@ async function processBatch(phone, batch, sock) {
 
   if (client && combinedText) {
     try {
-      const messageTimestamp = firstMsg.messageTimestamp || new Date().toISOString();
-      const complaintDetection = await fetch('http://localhost:3000/api/cases/detect-and-create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message_text: combinedText,
-          phone: phone,
-          client_id: client.id,
-          message_timestamp: messageTimestamp,
-        }),
+      const { detectAndCreateComplaint } = require('../routes/cases');
+      const result = await detectAndCreateComplaint({
+        messageText: combinedText,
+        phone,
+        clientId: client.id,
+        messageTimestamp: firstMsg.messageTimestamp || new Date().toISOString(),
       });
-      if (complaintDetection.ok) {
-        const result = await complaintDetection.json();
-        if (result.is_complaint) {
-          console.log(`[WA] Complaint detected for ${phone}: case #${result.case_id} (${result.case_type})`);
-        }
+      if (result && result.is_complaint) {
+        console.log(`[WA] Complaint detected for ${phone}: case #${result.case_id} (${result.case_type})`);
       }
     } catch (err) {
       console.error('[WA] Complaint detection error:', err.message);
@@ -340,13 +337,9 @@ async function handleIncomingMessage(msg, sock) {
 
   } catch (err) {
     console.error('[WA] Error procesando mensaje:', err);
-    try {
-      await sock.sendMessage(msg.key.remoteJid, {
-        text: 'Disculpe, ha ocurrido un error en nuestro sistema. Por favor, intente nuevamente en unos momentos.',
-      });
-    } catch (sendErr) {
-      console.error('[WA] Error enviando mensaje de error:', sendErr);
-    }
+    // Don't auto-reply on error: during capture-only / paused mode the apology
+    // was leaking replies we didn't want. If a genuine error response is ever
+    // needed, gate it on shouldBotRespond(phone) first.
   }
 }
 

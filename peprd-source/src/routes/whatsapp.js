@@ -3,15 +3,17 @@ const fs = require('fs');
 const path = require('path');
 const { createConnection, getConnection, getAnyConnection, disconnectSession } = require('../whatsapp/connection');
 const { handleIncomingMessage, setBotActive, isBotActive, setBotMode, getBotMode, setAssignmentMode, getAssignmentMode } = require('../whatsapp/handler');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, requireRole } = require('../middleware/auth');
 const config = require('../config');
 
 const router = express.Router();
 router.use(authenticate);
 
+const adminOnly = requireRole('admin');
+
 const pendingQRs = new Map();
 
-router.post('/connect', async (req, res) => {
+router.post('/connect', adminOnly, async (req, res) => {
   try {
     const sessionId = `user_${req.user.id}`;
 
@@ -52,7 +54,7 @@ router.post('/connect', async (req, res) => {
   }
 });
 
-router.get('/qr', (req, res) => {
+router.get('/qr', adminOnly, (req, res) => {
   const sessionId = `user_${req.user.id}`;
   const qr = pendingQRs.get(sessionId);
   if (qr) console.log(`[WA] QR request for ${sessionId}: FOUND`);
@@ -77,13 +79,13 @@ router.get('/status', (req, res) => {
   res.json({ sessionId: activeSession, connected, botActive: isBotActive(), botMode: getBotMode(), assignmentMode: getAssignmentMode() });
 });
 
-router.post('/bot-toggle', (req, res) => {
+router.post('/bot-toggle', adminOnly, (req, res) => {
   const current = isBotActive();
   setBotActive(!current);
   res.json({ botActive: !current });
 });
 
-router.post('/bot-mode', (req, res) => {
+router.post('/bot-mode', adminOnly, (req, res) => {
   const { mode } = req.body;
   if (mode !== 'all' && mode !== 'selected') {
     return res.status(400).json({ error: 'Mode must be "all" or "selected"' });
@@ -92,7 +94,7 @@ router.post('/bot-mode', (req, res) => {
   res.json({ botMode: mode });
 });
 
-router.post('/assignment-mode', (req, res) => {
+router.post('/assignment-mode', adminOnly, (req, res) => {
   const { mode } = req.body;
   if (mode !== 'manual' && mode !== 'automatic') {
     return res.status(400).json({ error: 'Assignment mode must be "manual" or "automatic"' });
@@ -101,7 +103,7 @@ router.post('/assignment-mode', (req, res) => {
   res.json({ assignmentMode: mode });
 });
 
-router.post('/disconnect', (req, res) => {
+router.post('/disconnect', adminOnly, (req, res) => {
   const sessionId = `user_${req.user.id}`;
   disconnectSession(sessionId);
   pendingQRs.delete(sessionId);
