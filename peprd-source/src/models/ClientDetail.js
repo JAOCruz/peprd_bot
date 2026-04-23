@@ -67,13 +67,13 @@ const ClientDetail = {
     return {
       client: clientData,
       services: services.rows,
-      cases: cases.rows,
+      cases: cases,
       messages: messages.rows,
       documents: documents.rows,
       appointments: appointments.rows,
       stats: {
         totalServices: services.rows.length,
-        totalCases: cases.rows.length,
+        totalCases: cases.length,
         totalMessages: messages.rows.length,
         totalDocuments: documents.rows.length,
       }

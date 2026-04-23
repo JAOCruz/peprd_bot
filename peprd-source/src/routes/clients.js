@@ -1,5 +1,6 @@
 const express = require('express');
 const Client = require('../models/Client');
+const ClientNote = require('../models/ClientNote');
 const { authenticate, requireRole } = require('../middleware/auth');
 
 const router = express.Router();
@@ -166,6 +167,52 @@ router.get('/:id/cases-summary', loadClientWithOwnership, async (req, res) => {
   } catch (err) {
     console.error('Get cases summary error:', err);
     res.status(500).json({ error: 'Failed to get cases summary' });
+  }
+});
+
+// ── Timeline notes ──
+router.get('/:id/notes', loadClientWithOwnership, async (req, res) => {
+  try {
+    const notes = await ClientNote.findByClient(req.params.id);
+    res.json({ notes });
+  } catch (err) {
+    console.error('List client notes error:', err);
+    res.status(500).json({ error: 'Failed to list notes' });
+  }
+});
+
+router.post('/:id/notes', loadClientWithOwnership, async (req, res) => {
+  try {
+    const note = await ClientNote.create({
+      clientId: Number(req.params.id),
+      authorId: req.user.id,
+      body: req.body && req.body.body,
+    });
+    // Return with author_name so the UI can render without re-fetching.
+    const enriched = { ...note, author_name: req.user.name || req.user.email };
+    res.status(201).json({ note: enriched });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    console.error('Create client note error:', err);
+    res.status(500).json({ error: 'Failed to create note' });
+  }
+});
+
+router.delete('/:id/notes/:noteId', loadClientWithOwnership, async (req, res) => {
+  try {
+    const note = await ClientNote.findById(req.params.noteId);
+    if (!note || note.client_id !== Number(req.params.id)) {
+      return res.status(404).json({ error: 'Note not found' });
+    }
+    // Only admin OR the original author can delete.
+    if (req.user.role !== 'admin' && note.author_id !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    await ClientNote.delete(req.params.noteId);
+    res.json({ message: 'Note deleted' });
+  } catch (err) {
+    console.error('Delete client note error:', err);
+    res.status(500).json({ error: 'Failed to delete note' });
   }
 });
 
