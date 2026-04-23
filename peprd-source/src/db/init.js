@@ -245,15 +245,33 @@ const schema = `
   );
 
   CREATE TABLE IF NOT EXISTS products (
-    id             SERIAL PRIMARY KEY,
-    category_slug  VARCHAR(100),
-    name           VARCHAR(255) UNIQUE NOT NULL,
-    price          DECIMAL(10, 2),
-    unit           VARCHAR(50) DEFAULT 'vial',
-    active         BOOLEAN DEFAULT true,
-    created_at     TIMESTAMPTZ DEFAULT NOW(),
-    updated_at     TIMESTAMPTZ DEFAULT NOW()
+    id                    SERIAL PRIMARY KEY,
+    category_slug         VARCHAR(100),
+    sku                   VARCHAR(100),
+    name                  VARCHAR(255) UNIQUE NOT NULL,
+    description           TEXT,
+    price                 DECIMAL(10, 2),
+    unit                  VARCHAR(50) DEFAULT 'vial',
+    stock                 INT DEFAULT 0,
+    low_stock_threshold   INT DEFAULT 5,
+    active                BOOLEAN DEFAULT true,
+    created_at            TIMESTAMPTZ DEFAULT NOW(),
+    updated_at            TIMESTAMPTZ DEFAULT NOW()
   );
+  ALTER TABLE products ADD COLUMN IF NOT EXISTS sku                 VARCHAR(100);
+  ALTER TABLE products ADD COLUMN IF NOT EXISTS description         TEXT;
+  ALTER TABLE products ADD COLUMN IF NOT EXISTS stock               INT DEFAULT 0;
+  ALTER TABLE products ADD COLUMN IF NOT EXISTS low_stock_threshold INT DEFAULT 5;
+
+  CREATE TABLE IF NOT EXISTS stock_movements (
+    id          SERIAL PRIMARY KEY,
+    product_id  INT REFERENCES products(id) ON DELETE CASCADE,
+    delta       INT NOT NULL,
+    reason      VARCHAR(255),
+    created_by  INT REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS idx_stock_movements_product ON stock_movements(product_id);
 
   CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
   CREATE INDEX IF NOT EXISTS idx_invoices_client ON invoices(client_id);

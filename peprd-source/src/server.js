@@ -20,6 +20,7 @@ const broadcastRoutes = require('./routes/broadcasts');
 const { sendBroadcast } = require('./routes/broadcasts');
 const servicesRoutes = require('./routes/services');
 const documentRoutes = require('./routes/documents');
+const productsRoutes = require('./routes/products');
 
 const app = express();
 
@@ -50,6 +51,7 @@ app.use('/api/invoices', invoiceRoutes);
 app.use('/api/broadcasts', broadcastRoutes);
 app.use('/api/services', servicesRoutes);
 app.use('/api/documents', documentRoutes);
+app.use('/api/products', productsRoutes);
 
 // Scheduler: check every 60s for scheduled broadcasts due to send
 setInterval(async () => {

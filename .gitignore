@@ -15,3 +15,10 @@ build/
 .idea/
 *.mp4
 Green/
+# Template source zips (keep locally, don't push)
+*.zip
+# WA pairings live here in dev
+peprd-source/wa_sessions/
+# Builds
+peprd-source/client/dist/
+peprd-source/uploads/
