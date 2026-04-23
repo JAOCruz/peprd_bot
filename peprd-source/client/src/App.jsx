@@ -4,6 +4,7 @@ import Layout from './components/Layout'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Clients from './pages/Clients'
+import ClientDetail from './pages/ClientDetail'
 import Cases from './pages/Cases'
 import Messages from './pages/Messages'
 import Appointments from './pages/Appointments'
@@ -37,6 +38,7 @@ export default function App() {
       <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
         <Route index element={<Dashboard />} />
         <Route path="clients" element={<Clients />} />
+        <Route path="clients/:id" element={<ClientDetail />} />
         <Route path="cases" element={<Cases />} />
         <Route path="messages" element={<Messages />} />
         <Route path="messages/:clientId" element={<Messages />} />

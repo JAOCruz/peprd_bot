@@ -4,7 +4,7 @@ import { useApi } from '../hooks/useApi'
 import { useAuth } from '../contexts/AuthContext'
 import { api } from '../utils/api'
 import { formatDate } from '../utils/format'
-import { MessageSquare, Pencil, UserPlus, Trash2, UserCheck } from 'lucide-react'
+import { MessageSquare, Pencil, UserPlus, Trash2, UserCheck, User } from 'lucide-react'
 
 export default function Clients() {
   const { user } = useAuth()
@@ -122,7 +122,7 @@ export default function Clients() {
               <tbody>
                 {clients.map(c => (
                   <tr key={c.id}>
-                    <td><strong>{c.name}</strong></td>
+                    <td><Link to={`/clients/${c.id}`} style={{ fontWeight: 600 }}>{c.name}</Link></td>
                     <td>{c.phone}</td>
                     <td className="text-sm">{c.email || '—'}</td>
                     {isAdmin && (
@@ -153,6 +153,7 @@ export default function Clients() {
                     <td className="text-sm text-muted hide-mobile">{formatDate(c.created_at)}</td>
                     <td>
                       <div className="flex gap-sm">
+                        <Link to={`/clients/${c.id}`} className="btn btn-secondary btn-sm" title="Ver detalle"><User size={13} /></Link>
                         <Link to={`/messages/${c.id}`} className="btn btn-secondary btn-sm" title="Ver chat"><MessageSquare size={13} /></Link>
                         <button className="btn btn-secondary btn-sm" onClick={() => openEdit(c)} title="Editar"><Pencil size={13} /></button>
                         {isAdmin && (

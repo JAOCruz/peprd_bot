@@ -307,10 +307,11 @@ export default function Invoices() {
                             </span>
                           )}
 
-                          {/* PDF link if sent */}
+                          {/* PDF link if sent. Uses the public /pdf/:filename route
+                              so a plain <a> can open it without a Bearer header. */}
                           {inv.status === 'sent' && inv.pdf_path && (
                             <a
-                              href={`/api/invoices/${inv.id}/pdf`}
+                              href={`/api/invoices/pdf/${encodeURIComponent(inv.doc_number)}.pdf`}
                               target="_blank"
                               rel="noreferrer"
                               className="btn btn-secondary btn-sm"

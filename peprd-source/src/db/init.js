@@ -109,9 +109,18 @@ const schema = `
     updated_at    TIMESTAMPTZ DEFAULT NOW()
   );
 
+  CREATE TABLE IF NOT EXISTS client_notes (
+    id          SERIAL PRIMARY KEY,
+    client_id   INT NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    author_id   INT REFERENCES users(id) ON DELETE SET NULL,
+    body        TEXT NOT NULL,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+  );
+
   CREATE INDEX IF NOT EXISTS idx_clients_phone ON clients(phone);
   CREATE INDEX IF NOT EXISTS idx_clients_assigned_to ON clients(assigned_to);
   CREATE INDEX IF NOT EXISTS idx_messages_wa_jid ON messages(wa_jid);
+  CREATE INDEX IF NOT EXISTS idx_client_notes_client ON client_notes(client_id, created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_cases_client ON cases(client_id);
   CREATE INDEX IF NOT EXISTS idx_cases_status ON cases(status);
   CREATE INDEX IF NOT EXISTS idx_messages_phone ON messages(phone);
