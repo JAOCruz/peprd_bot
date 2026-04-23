@@ -15,7 +15,7 @@ const Case = {
     return rows[0];
   },
 
-  async findAll({ status, clientId, caseType } = {}) {
+  async findAll({ status, clientId, caseType, assignedTo } = {}) {
     let query = `SELECT c.*, cl.name as client_name, cl.phone as client_phone FROM cases c
                  LEFT JOIN clients cl ON c.client_id = cl.id WHERE 1=1`;
     const params = [];
@@ -30,6 +30,11 @@ const Case = {
     if (caseType) {
       params.push(caseType);
       query += ` AND c.case_type = $${params.length}`;
+    }
+    // IDOR filter: digitadores only see cases for clients assigned to them.
+    if (assignedTo) {
+      params.push(assignedTo);
+      query += ` AND cl.assigned_to = $${params.length}`;
     }
     query += ' ORDER BY c.created_at DESC';
     const { rows } = await pool.query(query, params);
@@ -68,6 +73,32 @@ const Case = {
   async delete(id) {
     const { rowCount } = await pool.query('DELETE FROM cases WHERE id = $1', [id]);
     return rowCount > 0;
+  },
+
+  /**
+   * Returns true iff the case's client is assigned to this user.
+   * Uses a single join query instead of two lookups.
+   */
+  async belongsToUser(caseId, userId) {
+    if (!caseId || !userId) return false;
+    const { rows } = await pool.query(
+      `SELECT 1 FROM cases c
+       JOIN clients cl ON cl.id = c.client_id
+       WHERE c.id = $1 AND cl.assigned_to = $2
+       LIMIT 1`,
+      [caseId, userId]
+    );
+    return rows.length > 0;
+  },
+
+  /**
+   * Admins bypass; anyone else must own the client the case belongs to.
+   * `user` is the JWT-decoded req.user ({ id, role }).
+   */
+  async canAccessCase(caseId, user) {
+    if (!user) return false;
+    if (user.role === 'admin') return true;
+    return this.belongsToUser(caseId, user.id);
   },
 };
 

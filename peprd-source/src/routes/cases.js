@@ -153,6 +153,26 @@ async function detectAndCreateComplaint({ messageText, phone, clientId, messageT
 
 router.use(authenticate);
 
+/**
+ * IDOR guard: load the case, confirm admin bypass or that the case's client
+ * is assigned to the caller, stash on req for the handler.
+ */
+async function loadCaseWithOwnership(req, res, next) {
+  try {
+    const caseRecord = await Case.findById(req.params.id);
+    if (!caseRecord) return res.status(404).json({ error: 'Case not found' });
+    if (req.user.role !== 'admin') {
+      const ok = await Case.belongsToUser(caseRecord.id, req.user.id);
+      if (!ok) return res.status(403).json({ error: 'Access denied' });
+    }
+    req.caseRecord = caseRecord;
+    next();
+  } catch (err) {
+    console.error('[cases] ownership check error:', err);
+    res.status(500).json({ error: 'Failed to load case' });
+  }
+}
+
 // Admin/debug surface for complaint detection. Internal WA handler calls the
 // function directly (no HTTP), so this route is not on the hot path.
 router.post('/detect-and-create', complaintLimiter, async (req, res) => {
@@ -174,7 +194,14 @@ router.post('/detect-and-create', complaintLimiter, async (req, res) => {
 router.get('/', async (req, res) => {
   try {
     const { status, client_id, case_type } = req.query;
-    const cases = await Case.findAll({ status, clientId: client_id, caseType: case_type });
+    // Digitadores see only cases for clients assigned to them; admins see all.
+    const assignedTo = req.user.role === 'admin' ? undefined : req.user.id;
+    const cases = await Case.findAll({
+      status,
+      clientId: client_id,
+      caseType: case_type,
+      assignedTo,
+    });
     res.json({ cases });
   } catch (err) {
     console.error('List cases error:', err);
@@ -182,15 +209,8 @@ router.get('/', async (req, res) => {
   }
 });
 
-router.get('/:id', async (req, res) => {
-  try {
-    const caseRecord = await Case.findById(req.params.id);
-    if (!caseRecord) return res.status(404).json({ error: 'Case not found' });
-    res.json({ case: caseRecord });
-  } catch (err) {
-    console.error('Get case error:', err);
-    res.status(500).json({ error: 'Failed to get case' });
-  }
+router.get('/:id', loadCaseWithOwnership, async (req, res) => {
+  res.json({ case: req.caseRecord });
 });
 
 router.post('/', async (req, res) => {
@@ -198,6 +218,14 @@ router.post('/', async (req, res) => {
     const { case_number, title, description, case_type, client_id, court, next_hearing } = req.body;
     if (!case_number || !title || !client_id) {
       return res.status(400).json({ error: 'case_number, title, and client_id are required' });
+    }
+    // IDOR: digitadores can only create cases on clients assigned to them.
+    if (req.user.role !== 'admin') {
+      const client = await Client.findById(client_id);
+      if (!client) return res.status(404).json({ error: 'Client not found' });
+      if (client.assigned_to !== req.user.id) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
     }
     const caseRecord = await Case.create({
       caseNumber: case_number,
@@ -219,7 +247,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', loadCaseWithOwnership, async (req, res) => {
   try {
     const { title, description, status, case_type, court, next_hearing } = req.body;
     const fields = {};
